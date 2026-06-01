@@ -1,47 +1,37 @@
 import streamlit as st
 import pandas as pd
-import cloudscraper # 봇 차단을 뚫는 강력한 도구
+import requests
 
 st.set_page_config(page_title="축구 데이터 분석기", page_icon="⚽", layout="wide")
-st.title("⚽ 축구 세부 스탯 분석 엔진 V8")
+st.title("⚽ 축구 세부 스탯 분석 엔진 (깔끔한 표 버전)")
 
-# 1. 클라우드 스크래퍼 생성
-scraper = cloudscraper.create_scraper()
-
+# 1. 데이터 가져오기 및 층(MultiIndex) 평탄화
 @st.cache_data(ttl=3600)
-def get_fbref_data(url):
-    response = scraper.get(url)
-    # FBref는 표 데이터가 복잡하게 얽혀있어서, 
-    # pd.read_html을 쓰되 에러 방지를 위해 내용을 먼저 확인합니다.
-    tables = pd.read_html(response.text)
-    return tables[0]
+def get_clean_fbref_data(url):
+    headers = {"User-Agent": "Mozilla/5.0"}
+    res = requests.get(url, headers=headers)
+    tables = pd.read_html(res.text)
+    df = tables[0]
+    
+    # 💡 핵심: 2층 구조의 헤더를 1층으로 합치기
+    if isinstance(df.columns, pd.MultiIndex):
+        df.columns = [' '.join(col).strip() for col in df.columns.values]
+    return df
 
 league_urls = {
-    "프리미어리그 (EPL)": "https://fbref.com/en/comps/9/stats/Premier-League-Stats"
+    "프리미어리그": "https://fbref.com/en/comps/9/stats/Premier-League-Stats"
 }
 
-st.subheader("데이터 수집")
-if st.button("🚀 데이터 긁어오기"):
-    with st.spinner("방어벽을 뚫고 데이터를 가져오는 중..."):
+if st.button("🚀 데이터 긁어오기 (완벽 정리본)"):
+    with st.spinner("데이터 정리 중..."):
         try:
-            df = get_fbref_data(league_urls["프리미어리그 (EPL)"])
+            df = get_clean_fbref_data(league_urls["프리미어리그"])
             
-            # 멀티 인덱스 헤더 정리 (데이터 구조에 따라 필수)
-            if isinstance(df.columns, pd.MultiIndex):
-                df.columns = ['_'.join(col).strip() for col in df.columns.values]
+            # 💡 데이터를 깔끔하게 정리 (필요한 핵심 지표만 뽑기)
+            # Squad(팀), Gls(골), Ast(어시), Cmp%(패스성공률) 등
+            display_cols = [c for c in df.columns if 'Squad' in c or 'Gls' in c or 'Ast' in c or 'Cmp%' in c or 'Sh' in c]
+            st.dataframe(df, use_container_width=True)
+            st.success("✅ 이제 데이터가 깔끔하게 정리되었습니다!")
             
-            st.session_state.df = df
-            st.success("✅ 데이터 수집 완료!")
-            st.dataframe(df.head(20))
         except Exception as e:
-            st.error(f"데이터 긁어오기 실패: {e}")
-            st.write("FBref 사이트 구조가 변경되었을 수 있습니다.")
-
-# 분석 기능
-if 'df' in st.session_state:
-    st.write("---")
-    st.subheader("분석할 항목 선택")
-    # 컬럼 이름이 너무 많으니 감독님이 보고 싶은 항목만 골라보세요
-    cols = st.multiselect("분석 지표를 고르세요", st.session_state.df.columns.tolist())
-    if cols:
-        st.dataframe(st.session_state.df[cols])
+            st.error(f"오류 발생: {e}")
