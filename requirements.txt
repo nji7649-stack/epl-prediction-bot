@@ -1,10 +1,5 @@
 streamlit
+pandas
 requests
 gspread
 google-auth
-beautifulsoup4
-lxml
-pandas
-html5lib
-cloudscraper
-beautifulsoup4
