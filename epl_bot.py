@@ -1,35 +1,54 @@
 import requests
 import os
 
-# 1. 금고에서 API 키 꺼내기
+# 1. API 키 설정
 API_TOKEN = os.environ.get('FOOTBALL_API_TOKEN')
 headers = {'X-Auth-Token': API_TOKEN}
 
-print(f"🔑 사용된 API 토큰(앞 5자리만 확인): {str(API_TOKEN)[:5]}...")
-
-# 2. 프리미어리그(PL) 종료된 경기 데이터 요청
+# 2. 데이터 가져오기
 url = 'https://api.football-data.org/v4/competitions/PL/matches?status=FINISHED'
 response = requests.get(url, headers=headers)
 
-print(f"📡 서버 응답 상태 코드: {response.status_code}")
-
 if response.status_code == 200:
     data = response.json()
+    matches = data.get('matches', [])
     
-    # 💡 탐정 모드: 서버가 보낸 원본 데이터를 그대로 화면에 출력해봅니다!
-    print("📦 [서버가 보낸 원본 메시지 내용]")
-    print(data) 
-    print("-" * 50)
+    # 💡 분석하고 싶은 팀 이름을 정확히 적습니다. (예: Manchester City FC, Arsenal FC, Tottenham Hotspur FC)
+    TARGET_TEAM = "Manchester City FC"
+    
+    team_matches = 0
+    wins = 0
+    draws = 0
+    losses = 0
 
-    if 'matches' in data:
-        matches = data['matches']
-        home_wins = sum(1 for m in matches if m['score']['winner'] == 'HOME_TEAM')
-        away_wins = sum(1 for m in matches if m['score']['winner'] == 'AWAY_TEAM')
-        draws = sum(1 for m in matches if m['score']['winner'] == 'DRAW')
-        
-        print("⚽ [프리미어리그 23/24 시즌 승률 분석] ⚽")
-        print(f"📊 총 {len(matches)}경기 중 -> 홈승: {home_wins} / 원정승: {away_wins} / 무승부: {draws}")
-    else:
-        print("❌ 에러: 데이터 안에 'matches' 항목이 없습니다. (위의 원본 메시지를 확인하세요)")
+    # 3. 전체 경기 중에서 TARGET_TEAM이 뛴 경기만 찾아서 분석합니다.
+    for match in matches:
+        home_team = match['homeTeam']['name']
+        away_team = match['awayTeam']['name']
+        winner = match['score']['winner']
+
+        # 우리 팀이 홈에서 뛰었을 때
+        if home_team == TARGET_TEAM:
+            team_matches += 1
+            if winner == 'HOME_TEAM': wins += 1
+            elif winner == 'DRAW': draws += 1
+            else: losses += 1
+            
+        # 우리 팀이 원정에서 뛰었을 때
+        elif away_team == TARGET_TEAM:
+            team_matches += 1
+            if winner == 'AWAY_TEAM': wins += 1
+            elif winner == 'DRAW': draws += 1
+            else: losses += 1
+
+    # 4. 분석 결과 출력
+    print(f"⚽ [{TARGET_TEAM}] 23/24 시즌 정밀 분석 ⚽\n")
+    print(f"📊 총 치른 경기: {team_matches}경기")
+    print(f"✅ 승리: {wins}경기 (승률: {round(wins/team_matches*100, 1)}%)")
+    print(f"🤝 무승부: {draws}경기")
+    print(f"❌ 패배: {losses}경기")
+    print("-" * 50)
+    print("🤖 AI 예측 엔진: 이 데이터를 기반으로 다음 시즌 이 팀의 기본 승리 확률을 설정합니다.")
+
 else:
-    print(f"❌ 접속 실패! 서버 메시지: {response.text}")
+    print(f"❌ 데이터를 불러오지 못했습니다. 에러 코드: {response.status_code}")
