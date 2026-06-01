@@ -7,3 +7,4 @@ lxml
 pandas
 html5lib
 cloudscraper
+beautifulsoup4
