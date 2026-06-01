@@ -1,13 +1,12 @@
 import requests
 import os
-from datetime import datetime, timedelta
 
-# 1. 깃허브 보안 비밀고에서 API 키를 몰래 가져옵니다. (코드에 직접 쓰지 않기 위함)
+# 1. 금고에서 API 키 꺼내기
 API_TOKEN = os.environ.get('FOOTBALL_API_TOKEN')
 headers = {'X-Auth-Token': API_TOKEN}
 
-# 2. 프리미어리그(PL)의 '다가오는 예정된 경기(SCHEDULED)' 목록을 요청합니다.
-url = 'https://api.football-data.org/v4/competitions/PL/matches?status=SCHEDULED'
+# 2. 프리미어리그(PL)의 '종료된 경기(FINISHED)' 전체 데이터를 요청합니다!
+url = 'https://api.football-data.org/v4/competitions/PL/matches?status=FINISHED'
 
 response = requests.get(url, headers=headers)
 
@@ -15,21 +14,29 @@ if response.status_code == 200:
     data = response.json()
     matches = data.get('matches', [])
     
-    print("⚽ [프리미어리그 다가오는 경기 일정 및 기초 예측] ⚽\n")
+    total_matches = len(matches)
+    home_wins = 0
+    away_wins = 0
+    draws = 0
     
-    # 다가오는 가장 가까운 5경기만 먼저 출력해봅니다.
-    for match in matches[:5]:
-        home_team = match['homeTeam']['name']
-        away_team = match['awayTeam']['name']
-        match_date = match['utcDate'] # 경기 시간 (영국 기준)
-        
-        # 영국 시간을 한국 시간(KST)으로 변환 (+9시간)
-        dt_utc = datetime.strptime(match_date, "%Y-%m-%dT%H:%M:%SZ")
-        dt_kst = dt_utc + timedelta(hours=9)
-        
-        print(f"📅 일시: {dt_kst.strftime('%Y년 %m월 %d일 %H:%M (한국시간)')}")
-        print(f"🏟️ 매치업: {home_team} (홈)  VS  {away_team} (원정)")
-        print("🤖 AI 예측: (데이터 수집 중... 다음 단계에서 승률 계산 로직 추가 예정!)")
-        print("-" * 50)
+    # 3. 로봇이 모든 경기를 하나씩 확인하며 승무패를 셉니다.
+    for match in matches:
+        winner = match['score']['winner'] # 이긴 팀이 누군지 확인
+        if winner == 'HOME_TEAM':
+            home_wins += 1
+        elif winner == 'AWAY_TEAM':
+            away_wins += 1
+        elif winner == 'DRAW':
+            draws += 1
+            
+    # 4. 분석 결과 출력 (승률 계산: 승리 횟수 / 전체 경기 수 * 100)
+    print("⚽ [프리미어리그 23/24 시즌 최종 승률 분석] ⚽\n")
+    print(f"📊 총 분석 경기 수: {total_matches}경기")
+    print(f"🏠 홈팀 승리: {home_wins}경기 (승률: {round(home_wins/total_matches*100, 1)}%)")
+    print(f"✈️ 원정팀 승리: {away_wins}경기 (승률: {round(away_wins/total_matches*100, 1)}%)")
+    print(f"🤝 무승부: {draws}경기 (확률: {round(draws/total_matches*100, 1)}%)")
+    print("-" * 50)
+    print("🤖 AI 인사이트: 예측 모델을 만들 때, 아무 정보가 없어도 홈팀에게 이 확률만큼 기본 가중치를 주어야 합니다!")
+
 else:
     print(f"❌ 데이터를 불러오지 못했습니다. 에러 코드: {response.status_code}")
