@@ -120,4 +120,8 @@ if matches:
                     st.progress(int(home_prob))
                     
                     st.write(f"✈️ **{away_team}** 승리 확률: **{round(away_prob, 1)}%**")
-                    st.progress(int(away_prob
+                    st.progress(int(away_prob))
+                else:
+                    st.error("아직 충분한 경기 데이터가 없습니다.")
+else:
+    st.error("데이터를 가져오는 데 실패했습니다. API 키 문제이거나 서버 지연일 수 있습니다.")
