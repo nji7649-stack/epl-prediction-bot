@@ -1,16 +1,31 @@
 import streamlit as st
 import requests
+import gspread
+from google.oauth2.service_account import Credentials
+import datetime
 
-# 1. 웹사이트 기본 설정
-st.set_page_config(page_title="글로벌 축구 AI V3", page_icon="🌍", layout="wide")
-st.title("🌍 글로벌 AI 축구 예측기 (유럽 5대 리그)")
-st.write("프리미어리그를 넘어 스페인, 이탈리아, 독일, 프랑스 리그까지 전 세계 최고 팀들의 승부를 예측합니다.")
+st.set_page_config(page_title="글로벌 축구 AI V4", page_icon="🌍", layout="wide")
+st.title("🌍 글로벌 AI 축구 예측기 + 📝 구글 시트 자동 기록")
 
-# 2. API 설정 (비밀 금고에서 키 가져오기)
+# --- 설정 및 인증 파트 ---
 API_TOKEN = st.secrets["FOOTBALL_API_TOKEN"]
 headers = {'X-Auth-Token': API_TOKEN}
 
-# 3. 리그 선택 메뉴 생성 (무료로 제공되는 유럽 5대 리그)
+# 구글 시트 연결 세팅
+scopes = [
+    'https://www.googleapis.com/auth/spreadsheets',
+    'https://www.googleapis.com/auth/drive'
+]
+# 스트림릿 금고에서 구글 접속 열쇠를 꺼내옵니다.
+credentials = Credentials.from_service_account_info(
+    st.secrets["gcp_service_account"], scopes=scopes
+)
+gc = gspread.authorize(credentials)
+
+# 💡 감독님이 만드신 구글 시트의 정확한 파일 이름을 아래에 적어주세요!
+SHEET_NAME = "축구_AI_분석기록" 
+
+# --- 앱 로직 파트 ---
 leagues = {
     "🇬🇧 영국 프리미어리그 (EPL)": "PL",
     "🇪🇸 스페인 라리가": "PD",
@@ -19,11 +34,9 @@ leagues = {
     "🇫🇷 프랑스 리그 1": "FL1"
 }
 
-# 사용자 리그 선택창
-selected_league = st.selectbox("🏆 분석할 리그를 먼저 선택하세요!", list(leagues.keys()))
+selected_league = st.selectbox("🏆 분석할 리그 선택", list(leagues.keys()))
 league_code = leagues[selected_league]
 
-# 4. 데이터 긁어오기 & 캐싱 (매번 통신하면 API가 차단될 수 있으므로 임시 저장 기능 추가)
 @st.cache_data(ttl=3600)
 def fetch_data(comp_code):
     url = f'https://api.football-data.org/v4/competitions/{comp_code}/matches?status=FINISHED'
@@ -32,12 +45,9 @@ def fetch_data(comp_code):
         return res.json().get('matches', [])
     return []
 
-with st.spinner(f'{selected_league} 최신 경기 데이터를 불러오는 중...'):
-    matches = fetch_data(league_code)
+matches = fetch_data(league_code)
 
-# 5. 팀 목록 자동 추출 및 분석 파트
 if matches:
-    # 매치 데이터에서 팀 이름만 자동으로 뽑아내어 리스트 만들기 (수작업 노가다 방지!)
     team_set = set()
     for m in matches:
         team_set.add(m['homeTeam']['name'])
@@ -46,26 +56,20 @@ if matches:
     
     st.write("---")
     col1, col2 = st.columns(2)
-    with col1:
-        home_team = st.selectbox("🏠 홈 팀 선택", team_list, index=0)
-    with col2:
-        # 두 번째 팀을 기본 원정 팀으로 세팅
-        away_team = st.selectbox("✈️ 원정 팀 선택", team_list, index=1 if len(team_list) > 1 else 0)
+    with col1: home_team = st.selectbox("🏠 홈 팀", team_list, index=0)
+    with col2: away_team = st.selectbox("✈️ 원정 팀", team_list, index=1 if len(team_list) > 1 else 0)
 
-    if st.button("📊 글로벌 AI 분석 가동"):
+    if st.button("📊 분석 및 결과 기록하기"):
         if home_team == away_team:
-            st.warning("⚠️ 홈 팀과 원정 팀을 다르게 선택해주세요!")
+            st.warning("홈 팀과 원정 팀을 다르게 선택하세요!")
         else:
-            with st.spinner('해당 리그의 골 득실과 승률 데이터를 분석 중입니다...'):
+            with st.spinner('분석 중...'):
                 home_matches, home_wins, home_scored, home_conceded = 0, 0, 0, 0
                 away_matches, away_wins, away_scored, away_conceded = 0, 0, 0, 0
                 
-                # 선택한 두 팀의 전적만 추려내기
                 for m in matches:
-                    h_name = m['homeTeam']['name']
-                    a_name = m['awayTeam']['name']
+                    h_name, a_name = m['homeTeam']['name'], m['awayTeam']['name']
                     winner = m['score']['winner']
-                    
                     h_score = m['score']['fullTime'].get('home', 0) or 0
                     a_score = m['score']['fullTime'].get('away', 0) or 0
                     
@@ -74,7 +78,6 @@ if matches:
                         home_scored += h_score
                         home_conceded += a_score
                         if winner == 'HOME_TEAM': home_wins += 1
-                        
                     if away_team in a_name:
                         away_matches += 1
                         away_scored += a_score
@@ -85,43 +88,38 @@ if matches:
                     home_win_rate = (home_wins / home_matches) * 100
                     away_win_rate = (away_wins / away_matches) * 100
                     
-                    avg_home_scored = home_scored / home_matches
-                    avg_home_conceded = home_conceded / home_matches
-                    avg_away_scored = away_scored / away_matches
-                    avg_away_conceded = away_conceded / away_matches
+                    avg_h_scored = home_scored / home_matches
+                    avg_h_conceded = home_conceded / home_matches
+                    avg_a_scored = away_scored / away_matches
+                    avg_a_conceded = away_conceded / away_matches
                     
-                    st.success("✅ 글로벌 전력 스캔 및 AI 분석 완료!")
+                    # 승률 예측 계산
+                    h_pow = max(home_win_rate + (avg_h_scored * 15) - (avg_h_conceded * 15), 1)
+                    a_pow = max(away_win_rate + (avg_a_scored * 15) - (avg_a_conceded * 15), 1)
+                    t_pow = h_pow + a_pow
+                    home_prob = round((h_pow / t_pow) * 100, 1)
+                    away_prob = round((a_pow / t_pow) * 100, 1)
                     
-                    st.subheader(f"🔥 {selected_league} 팀별 상세 전투력")
-                    c1, c2, c3 = st.columns(3)
-                    c1.metric(f"🏠 {home_team}", f"{round(home_win_rate, 1)}% 승률")
-                    c2.metric("평균 득점 (공격력)", f"{round(avg_home_scored, 2)}골")
-                    c3.metric("평균 실점 (수비력)", f"{round(avg_home_conceded, 2)}골")
-                    
-                    c4, c5, c6 = st.columns(3)
-                    c4.metric(f"✈️ {away_team}", f"{round(away_win_rate, 1)}% 승률")
-                    c5.metric("평균 득점 (공격력)", f"{round(avg_away_scored, 2)}골")
-                    c6.metric("평균 실점 (수비력)", f"{round(avg_away_conceded, 2)}골")
-                    
-                    # 득실차 가중치 적용 예측 알고리즘
-                    home_power = home_win_rate + (avg_home_scored * 15) - (avg_home_conceded * 15)
-                    away_power = away_win_rate + (avg_away_scored * 15) - (avg_away_conceded * 15)
-                    
-                    home_power = max(home_power, 1)
-                    away_power = max(away_power, 1)
-                    
-                    total_power = home_power + away_power
-                    home_prob = (home_power / total_power) * 100
-                    away_prob = (away_power / total_power) * 100
-                    
-                    st.write("---")
-                    st.subheader("🤖 득실차 반영 최종 승부 예측")
-                    st.write(f"🏠 **{home_team}** 승리 확률: **{round(home_prob, 1)}%**")
+                    # 1. 화면에 결과 출력
+                    st.success("✅ 전력 스캔 및 AI 분석 완료!")
+                    st.subheader("🤖 득실차 반영 승부 예측")
+                    st.write(f"🏠 **{home_team}** 승리 확률: **{home_prob}%**")
                     st.progress(int(home_prob))
-                    
-                    st.write(f"✈️ **{away_team}** 승리 확률: **{round(away_prob, 1)}%**")
+                    st.write(f"✈️ **{away_team}** 승리 확률: **{away_prob}%**")
                     st.progress(int(away_prob))
+
+                    # 📝 2. 구글 시트에 자동 기록!
+                    try:
+                        # 한국 시간(KST)으로 기록
+                        now = datetime.datetime.utcnow() + datetime.timedelta(hours=9)
+                        time_str = now.strftime('%Y-%m-%d %H:%M:%S')
+                        
+                        # 시트 열고 데이터 쓰기
+                        worksheet = gc.open(SHEET_NAME).sheet1
+                        record = [time_str, selected_league, home_team, away_team, f"{home_prob}%", f"{away_prob}%"]
+                        worksheet.append_row(record)
+                        st.info("💾 (시스템 알림) 분석 결과가 구글 시트에 안전하게 자동 저장되었습니다!")
+                    except Exception as e:
+                        st.error(f"⚠️ 구글 시트 저장 실패: {e}")
                 else:
-                    st.error("아직 충분한 경기 데이터가 없습니다.")
-else:
-    st.error("데이터를 가져오는 데 실패했습니다. API 키 문제이거나 서버 지연일 수 있습니다.")
+                    st.error("데이터 부족!")
