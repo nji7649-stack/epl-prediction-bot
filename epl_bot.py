@@ -5,38 +5,31 @@ import os
 API_TOKEN = os.environ.get('FOOTBALL_API_TOKEN')
 headers = {'X-Auth-Token': API_TOKEN}
 
-# 2. 프리미어리그(PL)의 '종료된 경기(FINISHED)' 전체 데이터를 요청합니다!
-url = 'https://api.football-data.org/v4/competitions/PL/matches?status=FINISHED'
+print(f"🔑 사용된 API 토큰(앞 5자리만 확인): {str(API_TOKEN)[:5]}...")
 
+# 2. 프리미어리그(PL) 종료된 경기 데이터 요청
+url = 'https://api.football-data.org/v4/competitions/PL/matches?status=FINISHED'
 response = requests.get(url, headers=headers)
+
+print(f"📡 서버 응답 상태 코드: {response.status_code}")
 
 if response.status_code == 200:
     data = response.json()
-    matches = data.get('matches', [])
     
-    total_matches = len(matches)
-    home_wins = 0
-    away_wins = 0
-    draws = 0
-    
-    # 3. 로봇이 모든 경기를 하나씩 확인하며 승무패를 셉니다.
-    for match in matches:
-        winner = match['score']['winner'] # 이긴 팀이 누군지 확인
-        if winner == 'HOME_TEAM':
-            home_wins += 1
-        elif winner == 'AWAY_TEAM':
-            away_wins += 1
-        elif winner == 'DRAW':
-            draws += 1
-            
-    # 4. 분석 결과 출력 (승률 계산: 승리 횟수 / 전체 경기 수 * 100)
-    print("⚽ [프리미어리그 23/24 시즌 최종 승률 분석] ⚽\n")
-    print(f"📊 총 분석 경기 수: {total_matches}경기")
-    print(f"🏠 홈팀 승리: {home_wins}경기 (승률: {round(home_wins/total_matches*100, 1)}%)")
-    print(f"✈️ 원정팀 승리: {away_wins}경기 (승률: {round(away_wins/total_matches*100, 1)}%)")
-    print(f"🤝 무승부: {draws}경기 (확률: {round(draws/total_matches*100, 1)}%)")
+    # 💡 탐정 모드: 서버가 보낸 원본 데이터를 그대로 화면에 출력해봅니다!
+    print("📦 [서버가 보낸 원본 메시지 내용]")
+    print(data) 
     print("-" * 50)
-    print("🤖 AI 인사이트: 예측 모델을 만들 때, 아무 정보가 없어도 홈팀에게 이 확률만큼 기본 가중치를 주어야 합니다!")
 
+    if 'matches' in data:
+        matches = data['matches']
+        home_wins = sum(1 for m in matches if m['score']['winner'] == 'HOME_TEAM')
+        away_wins = sum(1 for m in matches if m['score']['winner'] == 'AWAY_TEAM')
+        draws = sum(1 for m in matches if m['score']['winner'] == 'DRAW')
+        
+        print("⚽ [프리미어리그 23/24 시즌 승률 분석] ⚽")
+        print(f"📊 총 {len(matches)}경기 중 -> 홈승: {home_wins} / 원정승: {away_wins} / 무승부: {draws}")
+    else:
+        print("❌ 에러: 데이터 안에 'matches' 항목이 없습니다. (위의 원본 메시지를 확인하세요)")
 else:
-    print(f"❌ 데이터를 불러오지 못했습니다. 에러 코드: {response.status_code}")
+    print(f"❌ 접속 실패! 서버 메시지: {response.text}")
