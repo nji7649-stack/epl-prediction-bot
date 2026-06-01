@@ -1,47 +1,54 @@
 import streamlit as st
 import pandas as pd
-import cloudscraper
-from lxml import html
+import requests
 
-st.set_page_config(page_title="축구 데이터 분석기", page_icon="⚽", layout="wide")
-st.title("⚽ 축구 세부 스탯 데이터 수집기")
+st.set_page_config(page_title="축구 AI 분석기 V8", page_icon="⚽", layout="wide")
+st.title("⚽ 축구 AI 분석기 V8 (API 연동 버전)")
 
-# 봇 차단을 피하기 위한 세팅
-scraper = cloudscraper.create_scraper(delay=10) 
+# API Key 설정 (스트림릿 Secrets에 저장한 키를 가져옵니다)
+API_KEY = st.secrets["API_KEY"]
+HEADERS = {
+    "x-rapidapi-key": API_KEY,
+    "x-rapidapi-host": "v3.football.api-sports.io"
+}
 
-def get_fbref_data():
-    url = "https://fbref.com/en/comps/9/stats/Premier-League-Stats"
-    # 사람인 것처럼 가장하는 상세 헤더
-    headers = {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-        "Accept-Language": "ko-KR,ko;q=0.9,en-US;q=0.8,en;q=0.7"
-    }
-    
-    response = scraper.get(url, headers=headers)
-    
-    # 여기서 응답 내용을 디버깅합니다. (데이터를 못 찾을 때 원인 확인)
-    if response.status_code != 200:
-        return None, f"사이트 연결 실패 (상태 코드: {response.status_code})"
-    
-    try:
-        # lxml 엔진을 명시하여 표를 찾습니다.
-        tables = pd.read_html(response.text, flavor='lxml')
-        return tables[0], None
-    except Exception as e:
-        return None, str(e)
+# 데이터를 불러오는 핵심 함수
+@st.cache_data(ttl=3600)
+def get_api_data(endpoint):
+    url = f"https://v3.football.api-sports.io/{endpoint}"
+    response = requests.get(url, headers=HEADERS)
+    return response.json()
 
-if st.button("🚀 데이터 긁어오기"):
-    with st.spinner("방어벽을 뚫고 표를 찾는 중..."):
-        df, error = get_fbref_data()
-        
-        if error:
-            st.error(f"데이터를 긁어오지 못했습니다: {error}")
-            st.write("FBref가 접속을 차단하고 있습니다. 잠시 후 다시 시도해 주세요.")
-        else:
-            # 2층 구조의 컬럼을 1층으로 합치기
-            if isinstance(df.columns, pd.MultiIndex):
-                df.columns = [' '.join(col).strip() for col in df.columns.values]
+# 리그 및 시즌 선택
+st.sidebar.header("데이터 선택")
+league_id = 39 # EPL 리그 ID (API-Football 기준)
+season = 2025
+
+if st.sidebar.button("📡 API로 최신 순위 가져오기"):
+    with st.spinner("전문 데이터를 불러오는 중..."):
+        try:
+            data = get_api_data(f"standings?league={league_id}&season={season}")
+            standings = data['response'][0]['league']['standings'][0]
             
-            st.success("✅ 데이터 수집 완료!")
-            st.dataframe(df, use_container_width=True)
-            st.session_state.df = df
+            # 데이터를 보기 좋게 정리
+            df_list = []
+            for team in standings:
+                df_list.append({
+                    "순위": team['rank'],
+                    "팀": team['team']['name'],
+                    "승점": team['points'],
+                    "득점": team['all']['goals']['for'],
+                    "실점": team['all']['goals']['against'],
+                    "승": team['all']['win'],
+                    "무": team['all']['draw'],
+                    "패": team['all']['lose']
+                })
+            st.session_state.df = pd.DataFrame(df_list)
+            st.success("✅ 데이터 로드 성공!")
+        except Exception as e:
+            st.error(f"데이터 로드 실패: {e}")
+
+# 화면 표시
+if 'df' in st.session_state:
+    st.dataframe(st.session_state.df, use_container_width=True)
+    st.write("💡 이 데이터는 API-Football로부터 실시간으로 제공받은 신뢰할 수 있는 데이터입니다.")
