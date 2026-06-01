@@ -1,48 +1,47 @@
 import streamlit as st
 import pandas as pd
-import requests
+import cloudscraper # 봇 차단을 뚫는 강력한 도구
 
 st.set_page_config(page_title="축구 데이터 분석기", page_icon="⚽", layout="wide")
-st.title("⚽ 축구 세부 스탯 분석 엔진 (전 리그 데이터)")
+st.title("⚽ 축구 세부 스탯 분석 엔진 V8")
 
-# 1. FBref 데이터를 긁어오는 함수
-@st.cache_data(ttl=3600) # 데이터를 캐시에 저장해서 속도를 높입니다.
+# 1. 클라우드 스크래퍼 생성
+scraper = cloudscraper.create_scraper()
+
+@st.cache_data(ttl=3600)
 def get_fbref_data(url):
-    headers = {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36"
-    }
-    response = requests.get(url, headers=headers)
-    # FBref의 테이블들을 전부 긁어옵니다.
+    response = scraper.get(url)
+    # FBref는 표 데이터가 복잡하게 얽혀있어서, 
+    # pd.read_html을 쓰되 에러 방지를 위해 내용을 먼저 확인합니다.
     tables = pd.read_html(response.text)
-    return tables[0] # 가장 중요한 팀 스탯 표 반환
+    return tables[0]
 
-# 2. 리그 선택창
 league_urls = {
-    "프리미어리그 (EPL)": "https://fbref.com/en/comps/9/stats/Premier-League-Stats",
-    "라리가": "https://fbref.com/en/comps/12/stats/La-Liga-Stats",
-    "세리에 A": "https://fbref.com/en/comps/11/stats/Serie-A-Stats",
-    "분데스리가": "https://fbref.com/en/comps/20/stats/Bundesliga-Stats"
+    "프리미어리그 (EPL)": "https://fbref.com/en/comps/9/stats/Premier-League-Stats"
 }
 
-selected_league = st.selectbox("분석할 리그를 선택하세요", list(league_urls.keys()))
-
-# 3. 데이터 표시
-if st.button("🚀 세부 데이터 긁어오기"):
-    with st.spinner("데이터를 분석 중입니다..."):
+st.subheader("데이터 수집")
+if st.button("🚀 데이터 긁어오기"):
+    with st.spinner("방어벽을 뚫고 데이터를 가져오는 중..."):
         try:
-            df = get_fbref_data(league_urls[selected_league])
+            df = get_fbref_data(league_urls["프리미어리그 (EPL)"])
             
-            # 여기서 데이터를 깔끔하게 표(Dataframe)로 보여줍니다.
-            st.success("✅ 수집 완료!")
-            
-            # 패스 성공률, 득점 등 주요 컬럼만 보기 좋게 정리
-            st.subheader(f"📊 {selected_league} 세부 스탯")
-            
-            # 멀티 인덱스 문제 해결 (FBref는 헤더가 복잡해서 정리 필요)
+            # 멀티 인덱스 헤더 정리 (데이터 구조에 따라 필수)
             if isinstance(df.columns, pd.MultiIndex):
-                df.columns = df.columns.get_level_values(1)
+                df.columns = ['_'.join(col).strip() for col in df.columns.values]
             
-            st.dataframe(df, use_container_width=True) # 엑셀처럼 꽉 찬 표
-            
+            st.session_state.df = df
+            st.success("✅ 데이터 수집 완료!")
+            st.dataframe(df.head(20))
         except Exception as e:
-            st.error(f"데이터 수집 중 오류 발생: {e}")
+            st.error(f"데이터 긁어오기 실패: {e}")
+            st.write("FBref 사이트 구조가 변경되었을 수 있습니다.")
+
+# 분석 기능
+if 'df' in st.session_state:
+    st.write("---")
+    st.subheader("분석할 항목 선택")
+    # 컬럼 이름이 너무 많으니 감독님이 보고 싶은 항목만 골라보세요
+    cols = st.multiselect("분석 지표를 고르세요", st.session_state.df.columns.tolist())
+    if cols:
+        st.dataframe(st.session_state.df[cols])
